@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wordle</title>
+  <style>
+    :root {
+      --bg: #121213;
+      --tile-border: #3a3a3c;
+      --tile-active: #565758;
+      --correct: #538d4e;
+      --present: #b59f3b;
+      --absent: #3a3a3c;
+      --key-bg: #818384;
+      --text: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Clear Sans', 'Helvetica Neue', Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      height: 100vh;
+      padding: 10px;
+      user-select: none;
+    }
+
+    header {
+      width: 100%;
+      max-width: 500px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--tile-border);
+      padding-bottom: 10px;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    button#reset-btn {
+      background: var(--tile-border);
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 4px;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+
+    button#reset-btn:hover {
+      opacity: 0.9;
+    }
+
+    #toast-container {
+      position: fixed;
+      top: 70px;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .toast {
+      background-color: #ffffff;
+      color: #121213;
+      padding: 12px 20px;
+      border-radius: 4px;
+      font-weight: bold;
+      font-size: 0.95rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      animation: fadeIn 0.15s ease-out;
+    }
+
+    #board {
+      display: grid;
+      grid-template-rows: repeat(6, 1fr);
+      gap: 6px;
+      width: 330px;
+      height: 396px;
+      margin: auto 0;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+    }
+
+    .tile {
+      border: 2px solid var(--tile-border);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 2rem;
+      font-weight: bold;
+      text-transform: uppercase;
+      transition: transform 0.15s ease, background-color 0.3s ease, border-color 0.3s ease;
+    }
+
+    .tile.filled {
+      border-color: var(--tile-active);
+      animation: pop 0.1s ease-in-out;
+    }
+
+    .tile.correct {
+      background-color: var(--correct);
+      border-color: var(--correct);
+    }
+
+    .tile.present {
+      background-color: var(--present);
+      border-color: var(--present);
+    }
+
+    .tile.absent {
+      background-color: var(--absent);
+      border-color: var(--absent);
+    }
+
+    #keyboard {
+      width: 100%;
+      max-width: 500px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-bottom: 10px;
+    }
+
+    .key-row {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .key {
+      background-color: var(--key-bg);
+      color: var(--text);
+      border: none;
+      border-radius: 4px;
+      height: 54px;
+      flex: 1;
+      font-size: 0.95rem;
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      text-transform: uppercase;
+      transition: background-color 0.2s ease;
+    }
+
+    .key.wide {
+      flex: 1.5;
+      font-size: 0.8rem;
+    }
+
+    .key.correct { background-color: var(--correct); }
+    .key.present { background-color: var(--present); }
+    .key.absent { background-color: var(--absent); }
+
+    @keyframes pop {
+      50% { transform: scale(1.1); }
+    }
+
+    @keyframes shake {
+      10%, 90% { transform: translateX(-2px); }
+      20%, 80% { transform: translateX(4px); }
+      30%, 50%, 70% { transform: translateX(-6px); }
+      40%, 60% { transform: translateX(6px); }
+    }
+
+    .shake {
+      animation: shake 0.4s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Wordle</h1>
+    <button id="reset-btn">Reset</button>
+  </header>
+
+  <div id="toast-container"></div>
+  <div id="board"></div>
+  <div id="keyboard"></div>
+
+  <script>
+    const TARGET_WORD = "ELVES";
+
+    const KEYBOARD_ROWS = [
+      ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
+      ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
+      ["ENTER", "Z", "X", "C", "V", "B", "N", "M", "⌫"]
+    ];
+
+    let currentRow = 0;
+    let currentCol = 0;
+    let boardState = [];
+    let gameOver = false;
+    let isChecking = false;
+
+    const boardEl = document.getElementById("board");
+    const keyboardEl = document.getElementById("keyboard");
+    const toastContainer = document.getElementById("toast-container");
+    const resetBtn = document.getElementById("reset-btn");
+
+    const validWordCache = new Set([TARGET_WORD]);
+
+    function initGame() {
+      currentRow = 0;
+      currentCol = 0;
+      gameOver = false;
+      isChecking = false;
+      boardState = Array.from({ length: 6 }, () => Array(5).fill(""));
+
+      renderBoard();
+      renderKeyboard();
+    }
+
+    function renderBoard() {
+      boardEl.innerHTML = "";
+      for (let r = 0; r < 6; r++) {
+        const rowEl = document.createElement("div");
+        rowEl.className = "row";
+        rowEl.id = `row-${r}`;
+        for (let c = 0; c < 5; c++) {
+          const tileEl = document.createElement("div");
+          tileEl.className = "tile";
+          tileEl.id = `tile-${r}-${c}`;
+          rowEl.appendChild(tileEl);
+        }
+        boardEl.appendChild(rowEl);
+      }
+    }
+
+    function renderKeyboard() {
+      keyboardEl.innerHTML = "";
+      KEYBOARD_ROWS.forEach(row => {
+        const rowEl = document.createElement("div");
+        rowEl.className = "key-row";
+        row.forEach(key => {
+          const keyEl = document.createElement("button");
+          keyEl.textContent = key;
+          keyEl.className = "key";
+          keyEl.id = `key-${key}`;
+          if (key === "ENTER" || key === "⌫") keyEl.classList.add("wide");
+          keyEl.addEventListener("click", () => handleInput(key));
+          rowEl.appendChild(keyEl);
+        });
+        keyboardEl.appendChild(rowEl);
+      });
+    }
+
+    function showToast(message, duration = 1800) {
+      const toast = document.createElement("div");
+      toast.className = "toast";
+      toast.textContent = message;
+      toastContainer.appendChild(toast);
+      setTimeout(() => {
+        toast.remove();
+      }, duration);
+    }
+
+    function shakeRow(rowIndex) {
+      const rowEl = document.getElementById(`row-${rowIndex}`);
+      rowEl.classList.remove("shake");
+      void rowEl.offsetWidth;
+      rowEl.classList.add("shake");
+    }
+
+    async function isRealEnglishWord(word) {
+      if (validWordCache.has(word)) return true;
+
+      try {
+        const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${word.toLowerCase()}`);
+        if (response.ok) {
+          validWordCache.add(word);
+          return true;
+        }
+        if (response.status === 404) {
+          return false;
+        }
+        return true;
+      } catch (err) {
+        console.warn("Dictionary check offline, allowing word:", err);
+        return true;
+      }
+    }
+
+    async function handleInput(key) {
+      if (gameOver || isChecking) return;
+
+      if (key === "⌫" || key === "BACKSPACE") {
+        if (currentCol > 0) {
+          currentCol--;
+          boardState[currentRow][currentCol] = "";
+          const tile = document.getElementById(`tile-${currentRow}-${currentCol}`);
+          tile.textContent = "";
+          tile.classList.remove("filled");
+        }
+        return;
+      }
+
+      if (key === "ENTER") {
+        if (currentCol < 5) {
+          showToast("Not enough letters");
+          shakeRow(currentRow);
+          return;
+        }
+
+        const guess = boardState[currentRow].join("");
+        isChecking = true;
+
+        const isValid = await isRealEnglishWord(guess);
+        isChecking = false;
+
+        if (!isValid) {
+          showToast("Not in word list");
+          shakeRow(currentRow);
+          return;
+        }
+
+        evaluateGuess(guess);
+        return;
+      }
+
+      if (/^[A-Z]$/.test(key) && currentCol < 5) {
+        boardState[currentRow][currentCol] = key;
+        const tile = document.getElementById(`tile-${currentRow}-${currentCol}`);
+        tile.textContent = key;
+        tile.classList.add("filled");
+        currentCol++;
+      }
+    }
+
+    function evaluateGuess(guess) {
+      const targetLetters = TARGET_WORD.split("");
+      const guessLetters = guess.split("");
+      const result = Array(5).fill("absent");
+      const letterCounts = {};
+
+      for (const letter of targetLetters) {
+        letterCounts[letter] = (letterCounts[letter] || 0) + 1;
+      }
+
+      for (let i = 0; i < 5; i++) {
+        if (guessLetters[i] === targetLetters[i]) {
+          result[i] = "correct";
+          letterCounts[guessLetters[i]]--;
+        }
+      }
+
+      for (let i = 0; i < 5; i++) {
+        if (result[i] === "absent" && letterCounts[guessLetters[i]] > 0) {
+          result[i] = "present";
+          letterCounts[guessLetters[i]]--;
+        }
+      }
+
+      for (let i = 0; i < 5; i++) {
+        const tile = document.getElementById(`tile-${currentRow}-${i}`);
+        tile.classList.add(result[i]);
+
+        const keyEl = document.getElementById(`key-${guessLetters[i]}`);
+        if (keyEl) {
+          if (result[i] === "correct") {
+            keyEl.classList.remove("present", "absent");
+            keyEl.classList.add("correct");
+          } else if (result[i] === "present" && !keyEl.classList.contains("correct")) {
+            keyEl.classList.remove("absent");
+            keyEl.classList.add("present");
+          } else if (result[i] === "absent" && !keyEl.classList.contains("correct") && !keyEl.classList.contains("present")) {
+            keyEl.classList.add("absent");
+          }
+        }
+      }
+
+      if (guess === TARGET_WORD) {
+        gameOver = true;
+        const praises = ["Genius!", "Magnificent!", "Impressive!", "Splendid!", "Great!", "Phew!"];
+        showToast(praises[currentRow], 3000);
+        return;
+      }
+
+      currentRow++;
+      currentCol = 0;
+
+      if (currentRow === 6) {
+        gameOver = true;
+        showToast(`The word was ${TARGET_WORD}`, 4000);
+      }
+    }
+
+    document.addEventListener("keydown", (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const key = e.key.toUpperCase();
+      if (key === "ENTER" || key === "BACKSPACE" || /^[A-Z]$/.test(key)) {
+        handleInput(key);
+      }
+    });
+
+    resetBtn.addEventListener("click", initGame);
+
+    initGame();
+  </script>
+</body>
+</html>
